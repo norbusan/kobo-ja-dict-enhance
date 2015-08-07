@@ -28,6 +28,25 @@
 # - Hiragana words are searched as *Katakana*, thus the Katakana entries
 #   need to be translated!
 #
+# TODO
+# - Words that should work but are still not translated:
+#     すばらしい because the Kanji explanation lists 素晴（ら）しい
+#     which is not accepted by the script at the moment
+#     and I don't know how to fix that for the moment
+# - get rid of either one of the zip/7z, or both and do everything with
+#   Perl modules
+#   Problem is that I have no idea how to unpack in LANG=ja_JP with
+#   Perl modules, this seems to be broken.
+# We can use Archive::Zip
+#   for my $n ($zip->memberNames()) {
+#     Encode::_utf8_on($n);
+#     print "$n\n";
+#   }
+# the filenames are internally stored as UTF8, but this is not recognized
+# in unzip. We need to tell that these are already utf8 with _utf8_on ..
+#
+# rest needs investigation
+#
 
 use strict;
 $^W = 1;
@@ -42,7 +61,9 @@ use Getopt::Long;
 use File::Temp;
 use File::Basename;
 use Cwd 'abs_path';
-#use Data::Dumper;
+use Encode;
+use Archive::Zip qw( :ERROR_CODES );
+use Data::Dumper;
 
 my $opt_edict = "edict2";
 my $opt_jadict = "dicthtml-jaxxdjs.zip";
@@ -127,10 +148,17 @@ sub main() {
       die "opt_unpacked/opt_unpackedzipped is NOT dir, exitint.";
     }
   } else {
-    $orig = File::Temp::tempdir(CLEANUP => !$opt_keep_in);
-    unpack_original_glohd($opt_jadict, $orig);
+    $orig = Archive::Zip->new();
+    unless ( $orig->read( $opt_jadict ) == AZ_OK ) {
+      die "cannot read $orig: $!" ;
+    }
+    # $orig = File::Temp::tempdir(CLEANUP => !$opt_keep_in);
+    # unpack_original_glohd($opt_jadict, $orig);
   }
   load_words($orig);
+  #for my $w (@words) {
+  #  print "..> $w\n";
+  #}
   load_dicts($orig);
   search_merge_edict();
   my $new = File::Temp::tempdir(CLEANUP => !$opt_keep_out);
@@ -205,10 +233,16 @@ EOF
 
 sub load_words {
   my $loc = shift;
-  open (my $wf, '<:encoding(utf8)', "$loc/words.original") or die "Cannot open $loc/words.original: $?";
-  @words = <$wf>;
-  chomp(@words);
-  close $wf || warn "Cannot close words.original: $?";
+  if (!ref($loc)) {
+    open (my $wf, '<:encoding(utf8)', "$loc/words.original") or die "Cannot open $loc/words.original: $?";
+    @words = <$wf>;
+    chomp(@words);
+    close $wf || warn "Cannot close words.original: $?";
+  } else {
+    my $ww = $loc->contents( 'words.original' );
+    die "Cannot open words.original from zip: $!" if (!$ww);
+    @words = map { utf8::decode($_); $_ } split /\n/, $ww;
+  }
 }
 
 
@@ -277,6 +311,13 @@ sub load_japanese3 {
   #exit 1;
 }
 
+#
+# TODO TODO
+# instead of unpacking we can use
+#    $zip->content($fn) to get the value and
+#    $zip->content($fn, $new) to replace the value
+# that would make everything in memory.
+
 sub unpack_original_glohd {
   print "unpacking original dictionary ... ";
   my ($opt_jadict, $orig) = @_;
@@ -292,30 +333,54 @@ sub unpack_original_glohd {
 }
 
 sub load_dicts {
-  my $loc = shift;
   # first load all dictionary files
-  my @hf = <"$loc/*.html">;
-  my $nr = $#hf;
-  my $i = 0;
-  for my $f (@hf) {
-    $i++;
-    my $per = int(($i/$nr)*10000)/100;
-    print "\033[Jloading dict files ... ${per}%" . "\033[G";
-    my $n = $f;
-    utf8::decode($n);
-    $n =~ s/^$loc\/(.*)\.html/$1/;
-    #print "reading file $n (.html)\n";
-    local $/;
-    my $wf;
-    if ($opt_unpackedzipped) {
-      open ($wf, '<:utf8', $f) || die "Cannot open $f: $?";
-    } else {
-      open ($wf, '<:gzip:utf8', $f) || die "Cannot open $f: $?";
+  my $loc = shift;
+  if (!ref($loc)) {
+    my @hf = <"$loc/*.html">;
+    my $nr = $#hf;
+    my $i = 0;
+    for my $f (@hf) {
+      $i++;
+      my $per = int(($i/$nr)*10000)/100;
+      print "\033[Jloading dict files ... ${per}%" . "\033[G";
+      my $n = $f;
+      utf8::decode($n);
+      $n =~ s/^$loc\/(.*)\.html/$1/;
+      #print "reading file $n (.html)\n";
+      local $/;
+      my $wf;
+      if ($opt_unpackedzipped) {
+        open ($wf, '<:utf8', $f) || die "Cannot open $f: $?";
+      } else {
+        open ($wf, '<:gzip:utf8', $f) || die "Cannot open $f: $?";
+      }
+      $dictfile{$n} = <$wf> ;
+      close $wf || warn "Cannot close $f: $?";
     }
-    $dictfile{$n} = <$wf> ;
-    close $wf || warn "Cannot close $f: $?";
+  } else {
+    my @hf;
+    for my $f ($loc->members) {
+      next if ($f->fileName !~ m/\.html$/);
+      push @hf, $f;
+    }
+    my $nr = $#hf;
+    my $i = 0;
+    for my $f (@hf) {
+      $i++;
+      my $per = int(($i/$nr)*10000)/100;
+      print "\033[Jloading dict files ... ${per}%" . "\033[G";
+      my $str = $loc->contents($f);
+      die "Cannot read " . $f->fileName . " from zip: $!" if (!$str);
+      my $n = $f->fileName;
+      $n =~ s/^(.*)\.html/$1/;
+      local $/;
+      open (my $wf, '<:gzip:utf8', \$str) || die "Cannot open from $f string: $?";
+      $dictfile{$n} = <$wf> ;
+      close $wf || warn "Cannot close $f: $?";
+    }
   }
   print "loading dict files ... done\n";
+  #print STDERR Dumper(\%dictfile);
 }
 
 # returns 0 on success
