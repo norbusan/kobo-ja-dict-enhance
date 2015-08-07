@@ -20,6 +20,7 @@
 # - 7z for unpacking with LANG support and packing up
 #
 # TODO
+# - include searching for Hiragana? Include all spelling???
 # - get rid of either one of the zip/7z, or both and do everything with
 #   Perl modules
 #   Problem is that I have no idea how to unpack in LANG=ja_JP with
