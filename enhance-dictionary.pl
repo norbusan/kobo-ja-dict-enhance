@@ -7,10 +7,11 @@
 # (C) 2015 Norbert Preining <norbert@preining.info>
 # Licensed under GNU General Public License version 3 or any later version.
 #
-# Version: 0.1
+# Version: 0.2
 #
 # Changelog:
 # v0.1: first working version
+# v0.2: do not depend on ja_JA locale, but use LC_CTYPE="C"
 #
 # Requirements
 # - unix (for now!)
@@ -29,7 +30,7 @@
 use strict;
 $^W = 1;
 
-my $version = "0.1";
+my $version = "0.2";
 
 use utf8;
 binmode(STDOUT, ":utf8");
@@ -238,7 +239,7 @@ sub unpack_original_glohd {
   if (! $opt_jadict) {
     die "Cannot determine abs path of $opt_jadict: $?";
   }
-  `cd $orig ; LANG=ja_JA 7z x \"$opt_jadict\"`;
+  `cd $orig ; LC_CTYPE=C 7z x \"$opt_jadict\"`;
   print "done\n";
 }
 
