@@ -59,6 +59,7 @@ my $opt_out;
 my $opt_keep_in = 0;
 my $opt_keep_out = 0;
 my $opt_unpacked;
+my $opt_unpackedzipped;
 my $help = 0;
 my $opt_version = 0;
 
@@ -85,6 +86,7 @@ sub main() {
     "keep-input"  => \$opt_keep_in,
     "keep-output" => \$opt_keep_out,
     "unpacked|u=s" => \$opt_unpacked,
+    "unpackedzipped=s" => \$opt_unpackedzipped,
     "help|?"      => \$help,
     "version|v"   => \$opt_version) or usage(1);
   usage(0) if $help;
@@ -104,14 +106,13 @@ sub main() {
     }
   }
   my $orig;
-  if ($opt_unpacked) {
-    print "opt_unpacked found = $opt_unpacked\n";
-    if (-d $opt_unpacked) {
-      print "opt_unpacked is dir\n";
+  if ($opt_unpacked || $opt_unpackedzipped) {
+    if (defined($opt_unpacked) && -d $opt_unpacked) {
       $orig = $opt_unpacked;
+    } elsif (-d $opt_unpackedzipped) {
+      $orig = $opt_unpackedzipped;
     } else {
-      print "opt_unpacked is NOT dir use tmp\n";
-      $orig = File::Temp::tempdir(CLEANUP => !$opt_keep_in);
+      die "opt_unpacked/opt_unpackedzipped is NOT dir, exitint.";
     }
   } else {
     $orig = File::Temp::tempdir(CLEANUP => !$opt_keep_in);
@@ -283,7 +284,12 @@ sub load_dicts {
     $n =~ s/^$loc\/(.*)\.html/$1/;
     #print "reading file $n (.html)\n";
     local $/;
-    open (my $wf, '<:gzip:utf8', $f) || die "Cannot open $f: $?";
+    my $wf;
+    if ($opt_unpackedzipped) {
+      open ($wf, '<:utf8', $f) || die "Cannot open $f: $?";
+    } else {
+      open ($wf, '<:gzip:utf8', $f) || die "Cannot open $f: $?";
+    }
     $dictfile{$n} = <$wf> ;
     close $wf || warn "Cannot close $f: $?";
   }
