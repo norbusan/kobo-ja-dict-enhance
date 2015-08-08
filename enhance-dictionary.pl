@@ -154,10 +154,15 @@ Options:
   --keep-input    keep the unpacked directory
   --keep-output   keep the updated output directory
   -u, --unpacked  location of an already unpacked original dictionary
+  --unpackedzipped  location of an already unpacked original dictionary
+                    where the html files are already un-gzipped
 
-Notes: 
+Notes:
 * Unpacked dictionaries contain html and gif files that are
   actually gzip-compressed, but without .gz extensions.
+  If you pass in an already unpacked dir as source via --unpacked, the
+  html files still need to be gzipped. If you have already unpacked
+  the html file, you can use --unpackedzipped.
 
 * Dictionaries: at the moment edict2 (free) and Japanese3 (commercial) are
   supported. But as far as I see they are overlapping to a very high
