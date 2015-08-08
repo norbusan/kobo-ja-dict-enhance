@@ -27,6 +27,10 @@
 #   need to be translated!
 #
 # TODO
+# - Words that should work but are still not translated:
+#     すばらしい because the Kanji explanation lists 素晴（ら）しい
+#     which is not accepted by the script at the moment
+#     and I don't know how to fix that for the moment
 # - get rid of either one of the zip/7z, or both and do everything with
 #   Perl modules
 #   Problem is that I have no idea how to unpack in LANG=ja_JP with
@@ -216,6 +220,7 @@ sub load_edict {
       $edict{$k} = $desc;
     }
     for my $k (@kana) {
+      $k =~ s/\(P\)$//;
       push @{$edictkana{$k}}, "@kanji: $desc";
     }
   }
@@ -435,6 +440,7 @@ sub search_merge_edict {
             my ($kanji, $desc) = split(': ', $pa, 2);
             if ($dictfile{$hh} =~ s/(a name="\Q$word\E".*?【\Q$kanji\E】)/$1<p>$desc/) {
               ${$source}++;
+              $found_total++;
             }
           }
         }
