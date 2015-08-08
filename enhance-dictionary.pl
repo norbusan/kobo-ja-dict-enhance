@@ -21,7 +21,15 @@
 # - 7z for unpacking with LANG support and packing up
 #
 # TODO
-# - include searching for Hiragana? Include all spelling???
+# - Hiragana search included for respective Kanji via searching for
+#     <a name="こうか" /><b>こ>う‐か</b>【公暇】<p>
+#   the Kanji between 【 and 】 
+#   BUT ....
+#   although the spellings for Hiragana words are now included
+#   they are not displayed on the Kobo, neither when searching in the dict
+#   nor when looking up a word.
+#   But in the respective .html file in the dict the entry does indeed
+#   contain the value.
 # - get rid of either one of the zip/7z, or both and do everything with
 #   Perl modules
 #   Problem is that I have no idea how to unpack in LANG=ja_JP with
@@ -55,7 +63,9 @@ my $opt_version = 0;
 
 # global vars of data
 my %edict;
+my %edictkana;
 my %japanese3;
+my %japanese3kana;
 my %word2file;
 my %dictfile;
 my @words;
@@ -189,17 +199,27 @@ sub load_edict {
   open (my $wf, '<:encoding(utf8)', $edict) or die "Cannot open $edict: $?";
   while (<$wf>) {
     chomp;
-    my @fields = split(" ", $_, 3);
+    my @fields = split(" ", $_, 2);
     my @kanji = split(/;/,$fields[0]);
     my $desc;
+    my $kanastr;
+    my @kana;
+    # if the line is an entry for a Katakana/Hiragana word, there is 
+    # no second field and the next one is immediately the English
     if ($fields[1] =~ m/^\//) {
       $desc = $fields[1];
     } else {
-      $desc = $fields[2];
+      ($kanastr, $desc) = split(" ", $fields[1], 2);
+      $kanastr =~ s/^\[//;
+      $kanastr =~ s/^\]//;
+      @kana = split(/;/, $kanastr);
     }
     for my $k (@kanji) {
       $k =~ s/\(P\)$//;
       $edict{$k} = $desc;
+    }
+    for my $k (@kana) {
+      push @{$edictkana{$k}}, "@kanji: $desc";
     }
   }
   print "done\n";
@@ -222,6 +242,9 @@ sub load_japanese3 {
     my $desc = $fields[2];
     if ($kanj && $desc) {
       $japanese3{$kanj} = $desc;
+      if ($furi) {
+        push @{$japanese3kana{$furi}}, "$kanj: $desc";
+      }
     }
   }
   print "done\n";
@@ -358,7 +381,7 @@ sub search_merge_edict {
             $found_edict++;
             $found_total++;
             last DICTS;
-          } 
+          }
         } elsif ($d eq 'japanese3') {
           if ($japanese3{$word}) {
             $found_japa++;
@@ -373,27 +396,47 @@ sub search_merge_edict {
       # mind the NOT GREEDY search for the first <p>!!! .*?
       if ($w) {
         $dictfile{$hh} =~ s/(a name="\Q$word\E".*?)<p>/$1<p>$w<p>/;
+      } else {
+        # this is the case when we might have some kana reading.
+        # check for possible kana readings
+        # the possible list is a set of "KANJI: desc"
+        my @possible_readings;
+        my $source;
+        DICTSKANA: for my $d (@opt_dicts) {
+          if ($d eq 'edict2') {
+            if ($edictkana{$word}) {
+              @possible_readings = @{$edictkana{$word}};
+              $source = \$found_edict;
+              last DICTSKANA;
+            } 
+          } elsif ($d eq 'japanese3') {
+            if ($japanese3kana{$word}) {
+              @possible_readings = @{$japanese3kana{$word}};
+              $source = \$found_japa;
+              last DICTSKANA;
+            }
+          } else {
+            # actually not necessary
+            die "Unknown dictionary: $d";
+          }
+        }
+        if (@possible_readings) {
+          for my $pa (@possible_readings) {
+            my ($kanji, $desc) = split(': ', $pa, 2);
+            # this is really strange ... if the $desc is inserted 
+            # after the 【\Q$kanji\E】 it does NOT show up in the dict
+            # at all...
+            # maybe the internal kobo display engine shows the text
+            # that follows the following <p>［副］
+            # also this does not work!!!
+            #if ($dictfile{$hh} =~ s/(a name="\Q$word\E".*?【\Q$kanji\E】<p>［[^］]*?］)/$1 $desc<p>/) {
+            if ($dictfile{$hh} =~ s/(a name="\Q$word\E".*?【\Q$kanji\E】)/$1<p>$desc/) {
+              ${$source}++;
+            }
+          }
+        }
       }
     }
-    #if ($word2file{$word} && ($edict{$word} || $japanese3{$word})) {
-    #  my $hh = $word2file{$word};
-    #  # prefer edict over Japanese
-    #  my $w;
-    #  $found_total++;
-    #  if ($edict{$word}) {
-    #    $w = $edict{$word};
-    #    $w =~ s/^\///;
-    #    $w =~ s/EntL[0-9]*X?\/$//;
-    #    $w =~ s/\/$//;
-    #    $found_edict++;
-    #  } 
-    #  if ($japanese3{$word}) {
-    #    $found_japa++;
-    #    $w = $japanese3{$word} unless $w; # we prefer edict data for now!!!
-    #  }
-    #  # mind the NOT GREEDY search for the first <p>!!! .*?
-    #  $dictfile{$hh} =~ s/(a name="\Q$word\E".*?)<p>/$1<p>$w<p>/;
-    #}
   }
   print "searching for words and updating ... done\n";
   print "total words $nr, matches: $found_total (edict: $found_edict, japanese3: $found_japa)\n";
