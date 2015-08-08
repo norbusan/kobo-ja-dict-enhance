@@ -7,11 +7,12 @@
 # (C) 2015 Norbert Preining <norbert@preining.info>
 # Licensed under GNU General Public License version 3 or any later version.
 #
-# Version: 0.2
+# Version: 0.3DEV
 #
 # Changelog:
 # v0.1: first working version
 # v0.2: do not depend on ja_JA locale, but use LC_CTYPE="C"
+# v0.3: add translations to hiragana and katakana words
 #
 # Requirements
 # - unix (for now!)
@@ -20,16 +21,12 @@
 #   from gzipped files
 # - 7z for unpacking with LANG support and packing up
 #
+#
+# NOTES
+# - Hiragana words are searched as *Katakana*, thus the Katakana entries
+#   need to be translated!
+#
 # TODO
-# - Hiragana search included for respective Kanji via searching for
-#     <a name="こうか" /><b>こ>う‐か</b>【公暇】<p>
-#   the Kanji between 【 and 】 
-#   BUT ....
-#   although the spellings for Hiragana words are now included
-#   they are not displayed on the Kobo, neither when searching in the dict
-#   nor when looking up a word.
-#   But in the respective .html file in the dict the entry does indeed
-#   contain the value.
 # - get rid of either one of the zip/7z, or both and do everything with
 #   Perl modules
 #   Problem is that I have no idea how to unpack in LANG=ja_JP with
@@ -402,6 +399,9 @@ sub search_merge_edict {
         # the possible list is a set of "KANJI: desc"
         my @possible_readings;
         my $source;
+        my $hiraword = $word;
+        # convert to hiragana
+        $hiraword =~ tr/[\x{30A1}-\x{30FF}]/[\x{3041}-\x{3096}]/;
         DICTSKANA: for my $d (@opt_dicts) {
           if ($d eq 'edict2') {
             if ($edictkana{$word}) {
@@ -409,9 +409,19 @@ sub search_merge_edict {
               $source = \$found_edict;
               last DICTSKANA;
             } 
+            if ($edictkana{$hiraword}) {
+              @possible_readings = @{$edictkana{$hiraword}};
+              $source = \$found_edict;
+              last DICTSKANA;
+            }
           } elsif ($d eq 'japanese3') {
             if ($japanese3kana{$word}) {
               @possible_readings = @{$japanese3kana{$word}};
+              $source = \$found_japa;
+              last DICTSKANA;
+            }
+            if ($japanese3kana{$hiraword}) {
+              @possible_readings = @{$japanese3kana{$hiraword}};
               $source = \$found_japa;
               last DICTSKANA;
             }
@@ -423,13 +433,6 @@ sub search_merge_edict {
         if (@possible_readings) {
           for my $pa (@possible_readings) {
             my ($kanji, $desc) = split(': ', $pa, 2);
-            # this is really strange ... if the $desc is inserted 
-            # after the 【\Q$kanji\E】 it does NOT show up in the dict
-            # at all...
-            # maybe the internal kobo display engine shows the text
-            # that follows the following <p>［副］
-            # also this does not work!!!
-            #if ($dictfile{$hh} =~ s/(a name="\Q$word\E".*?【\Q$kanji\E】<p>［[^］]*?］)/$1 $desc<p>/) {
             if ($dictfile{$hh} =~ s/(a name="\Q$word\E".*?【\Q$kanji\E】)/$1<p>$desc/) {
               ${$source}++;
             }
