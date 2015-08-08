@@ -1,0 +1,16 @@
+TODO
+
+- get rid of either one of the zip/7z, or both and do everything with
+   Perl modules (WIP)
+
+
+- Words that don't show up
+	いくつ
+	そして
+	きびきび
+	みんな
+	する
+	すばらしい
+		because the Kanji lists 素晴（ら）しい
+		so the matching does not work out!
+

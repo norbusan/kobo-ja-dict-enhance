@@ -26,20 +26,11 @@
 # - Hiragana words are searched as *Katakana*, thus the Katakana entries
 #   need to be translated!
 #
-# TODO
-# - Words that should work but are still not translated:
-#     すばらしい because the Kanji explanation lists 素晴（ら）しい
-#     which is not accepted by the script at the moment
-#     and I don't know how to fix that for the moment
-# - get rid of either one of the zip/7z, or both and do everything with
-#   Perl modules
-#   Problem is that I have no idea how to unpack in LANG=ja_JP with
-#   Perl modules, this seems to be broken.
 
 use strict;
 $^W = 1;
 
-my $version = "0.2";
+my $version = "0.3DEV";
 
 use utf8;
 binmode(STDOUT, ":utf8");
