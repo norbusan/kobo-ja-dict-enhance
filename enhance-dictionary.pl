@@ -425,6 +425,11 @@ sub search_merge_edict {
       }
       # mind the NOT GREEDY search for the first <p>!!! .*?
       if ($w) {
+        # we should NOT blindly replace this, as we might end up with
+        # things like:
+        # <a name="だけ" /><b>たけ</b>【岳／嶽】<p>only‚ just‚ as<p>《
+        # because Japanese3 ships a direct definitions of だけ which
+        # is here used for replacing the definition os 岳 ...
         $dictfile{$hh} =~ s/(a name="\Q$word\E".*?)<p>/$1<p>$w<p>/;
       } else {
         # this is the case when we might have some kana reading.
@@ -466,6 +471,10 @@ sub search_merge_edict {
         if (@possible_readings) {
           for my $pa (@possible_readings) {
             my ($kanji, $desc) = split(': ', $pa, 2);
+            # here there are some cases that we do not cover:
+            # - 【素晴（ら）しい】
+            # - 【岳／嶽】 could be fixed by adding (\p{Kanji}／)* at the
+            #              beginning and end
             if ($dictfile{$hh} =~ s/(a name="\Q$word\E".*?【\Q$kanji\E】)/$1<p>$desc/) {
               ${$source}++;
               $found_total++;

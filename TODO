@@ -3,6 +3,10 @@ TODO
 - get rid of either one of the zip/7z, or both and do everything with
    Perl modules (WIP)
 
+- Wrong entrie:
+	<a name="だけ" /><b>たけ</b>【岳／嶽】<p>only‚ just‚ as<p>《
+	We should NOT replace  a name=".." if there is a 【kanji】...
+	Or maybe we should????
 
 - Words that don't show up
 	そして
@@ -13,4 +17,6 @@ TODO
 	たけ as 岳
 		becasue the Kanji lists 【岳／嶽】
 		and we are checking only for 【岳】
+	だけ
+		as only ... although it has a Japanese3 entry!
 
