@@ -5,12 +5,12 @@ TODO
 
 
 - Words that don't show up
-	いくつ
 	そして
 	きびきび
-	みんな
-	する
 	すばらしい
 		because the Kanji lists 素晴（ら）しい
 		so the matching does not work out!
+	たけ as 岳
+		becasue the Kanji lists 【岳／嶽】
+		and we are checking only for 【岳】
 

@@ -21,6 +21,8 @@
 #   from gzipped files
 # - 7z for unpacking with LANG support and packing up
 #
+# Current status based on 3.16.10 dictionary and edict2 and Japanese3:
+# total words 805521, matches: 274464 (edict: 265953, japanese3: 8511)
 #
 # NOTES
 # - Hiragana words are searched as *Katakana*, thus the Katakana entries
@@ -53,6 +55,7 @@ my $opt_unpacked;
 my $opt_unpackedzipped;
 my $help = 0;
 my $opt_version = 0;
+my $info;
 
 # global vars of data
 my %edict;
@@ -78,6 +81,7 @@ sub main() {
     "keep-output" => \$opt_keep_out,
     "unpacked|u=s" => \$opt_unpacked,
     "unpackedzipped=s" => \$opt_unpackedzipped,
+    "info=s"      => \$info,
     "help|?"      => \$help,
     "version|v"   => \$opt_version) or usage(1);
   usage(0) if $help;
@@ -85,8 +89,16 @@ sub main() {
     print version();
     exit(0);
   }
-  @opt_dicts = qw/edict2/ if (!@opt_dicts);
-  print "Using the following dictionaries as source for translations: @opt_dicts\n";
+  # try to auto-determine the list of dictionaries if nothing is passed in
+  if (!@opt_dicts) {
+    push @opt_dicts, 'edict2' if (-r $opt_edict);
+    push @opt_dicts, 'japanese3' if (-r $opt_japanese3);
+  }
+  if (@opt_dicts) {
+    print "Using the following dictionaries as source for translations: @opt_dicts\n";
+  } else {
+    die "No dictionary found or not readable, exiting.";
+  }
   for my $d (@opt_dicts) {
     if ($d eq 'edict2') {
       load_edict($opt_edict);
@@ -95,6 +107,15 @@ sub main() {
     } else {
       die "Unknown dictionary: $d";
     }
+  }
+  if ($info) {
+    utf8::decode($info);
+    print "Info on $info:\n";
+    print "Edict entry found: $edict{$info}\n" if ($edict{$info});
+    print "EdictKana entry found: @{$edictkana{$info}}\n" if ($edictkana{$info});
+    print "Japanese3 entry found: $japanese3{$info}\n" if ($japanese3{$info});
+    print "Japanese3Kana entry found: @{$japanese3kana{$info}}\n" if ($japanese3kana{$info});
+    exit(0);
   }
   my $orig;
   if ($opt_unpacked || $opt_unpackedzipped) {
@@ -132,21 +153,26 @@ Update the Kobo GloHD Japanese dictionary with English definitions
 from edict (and or Japanese3).
 
 Options:
-  -h, --help      Print this message and exit.
-  -i, --input     location of the original Kobo GloHD dict
-                    default: dicthtml-jaxxdjs.zip
-  -o, --output    name of the output file
-                    default: dicthtml-jaxxdjs-TIMESTAMP.zip
-  --dicts         dictionaries to be used, can be given multiple times
-                  possible values are 'edict2' and 'japanese3'
-                  The order determines the priority of the dictionary.
-  -e, --edict     location of the edict2 file (default: edict2)
-  -j, --japanese3 location of the japanese3 file (default: japanese3-data)
-  --keep-input    keep the unpacked directory
-  --keep-output   keep the updated output directory
-  -u, --unpacked  location of an already unpacked original dictionary
-  --unpackedzipped  location of an already unpacked original dictionary
-                    where the html files are already un-gzipped
+  -h, --help            Print this message and exit.
+  -v, --version         Print version and exit.
+  --info=STR            Print info found on STR in dictionaries and exit.
+  -i, --input=STR       location of the original Kobo GloHD dict
+                          default: dicthtml-jaxxdjs.zip
+  -o, --output=STR      name of the output file
+                          default: dicthtml-jaxxdjs-TIMESTAMP.zip
+  --dicts=STR           dictionaries to be used, can be given multiple times
+                        possible values are 'edict2' and 'japanese3'
+                        The order determines the priority of the dictionary.
+                        If *not* given, all found dictionaries are used.
+  -e, --edict=STR       location of the edict2 file
+                          default: edict2
+  -j, --japanese3=STR   location of the japanese3 file
+                          default: japanese3-data
+  --keep-input          keep the unpacked directory
+  --keep-output         keep the updated output directory
+  -u, --unpacked=STR    location of an already unpacked original dictionary
+  --unpackedzipped=STR  location of an already unpacked original dictionary
+                        where the html files are already un-gzipped
 
 Notes:
 * Unpacked dictionaries contain html and gif files that are
@@ -209,16 +235,16 @@ sub load_edict {
     } else {
       ($kanastr, $desc) = split(" ", $fields[1], 2);
       $kanastr =~ s/^\[//;
-      $kanastr =~ s/^\]//;
+      $kanastr =~ s/\]$//;
       @kana = split(/;/, $kanastr);
     }
     for my $k (@kanji) {
       $k =~ s/\(P\)$//;
       $edict{$k} = $desc;
-    }
-    for my $k (@kana) {
-      $k =~ s/\(P\)$//;
-      push @{$edictkana{$k}}, "@kanji: $desc";
+      for my $ka (@kana) {
+        $ka =~ s/\(P\)$//;
+        push @{$edictkana{$ka}}, "$k: $desc";
+      }
     }
   }
   print "done\n";
