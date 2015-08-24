@@ -61,6 +61,7 @@ my $opt_version = 0;
 my $info;
 my $opt_debug = 0;
 my $opt_checkword;
+my $opt_new;
 
 # global vars of data
 my %edict;
@@ -91,6 +92,7 @@ sub main() {
     "help|?"      => \$help,
     "debug|d"     => \$opt_debug,
     "checkword=s" => \$opt_checkword,
+    "new" => \$opt_new,
     "version|v"   => \$opt_version) or usage(1);
   usage(0) if $help;
   if ($opt_version) {
@@ -335,10 +337,33 @@ sub load_dicts {
     } else {
       open ($wf, '<:gzip:utf8', $f) || die "Cannot open $f: $?";
     }
-    $dictfile{$n} = <$wf> ;
+    my $str = <$wf> ;
     close $wf || warn "Cannot close $f: $?";
+    if (!$opt_new) {
+      $dictfile{$n} = $str ;
+    } else {
+      print STDERR "\n ======== $n ========\n";
+      my $new = '';
+      if ($str =~ m/^(.*?<a name=")/g) {
+        $new .= $1;
+      } else {
+        die "Cannot parse $n.";
+      }
+      while ($str =~ m/(.*?(<a name="|$))/g) {
+        print STDERR "found $1\n";
+        if ($1) {
+          # we get one return value with empty match!
+          my $entry = $1;
+          # work on the entry and replace strings ...
+          # and add it to $new
+        }
+      }
+      # this is already the replaced entry!
+      $dictfile{$n} = $new;
+    }
   }
   print "loading dict files ... done\n";
+  exit(1) if $opt_new;
 }
 
 # returns 0 on success
@@ -375,7 +400,6 @@ sub search_merge_edict {
     $i++;
     my $per = int(($i/$nr)*10000)/100;
     print "\033[Jsearching for words and updating ... ${per}%" . "\033[G";
-    debug("Working on たけ\n");
     my ($a, $b);
     my $foo = $word;
     $foo =~ s/\s//g;
@@ -421,7 +445,6 @@ sub search_merge_edict {
       }
     }
     if ($word2file{$word}) {
-      debug("Found word2file たけ = ", $word2file{$word}, "\n");
       my $hh = $word2file{$word};
       my $w;
       # do the dict check in reverse order so that the first listed dict
