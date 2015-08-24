@@ -12,7 +12,8 @@
 # Changelog:
 # v0.1: first working version
 # v0.2: do not depend on ja_JA locale, but use LC_CTYPE="C"
-# v0.3: add translations to hiragana and katakana words
+# v0.3: - add translations to hiragana and katakana words
+#       - translation of multiple Hiragana entries with different Kanjis
 #
 # Requirements
 # - unix (for now!)
@@ -22,7 +23,7 @@
 # - 7z for unpacking with LANG support and packing up
 #
 # Current status based on 3.16.10 dictionary and edict2 and Japanese3:
-# total words 805521, matches: 274464 (edict: 265953, japanese3: 8511)
+# matches: 296678 (edict: 288031, japanese3: 8647)
 #
 # NOTES
 # - Hiragana words are searched as *Katakana*, thus the Katakana entries
@@ -37,6 +38,7 @@ my $version = "0.3DEV";
 use utf8;
 binmode(STDOUT, ":utf8");
 binmode(STDIN, ":utf8");
+binmode(STDERR, ":utf8");
 
 use Getopt::Long;
 use File::Temp;
@@ -49,6 +51,7 @@ my $opt_jadict = "dicthtml-jaxxdjs.zip";
 my $opt_japanese3 = "japanese3-data";
 my @opt_dicts;
 my $opt_out;
+my $opt_outputdir;
 my $opt_keep_in = 0;
 my $opt_keep_out = 0;
 my $opt_unpacked;
@@ -56,6 +59,8 @@ my $opt_unpackedzipped;
 my $help = 0;
 my $opt_version = 0;
 my $info;
+my $opt_debug = 0;
+my $opt_checkword;
 
 # global vars of data
 my %edict;
@@ -81,8 +86,11 @@ sub main() {
     "keep-output" => \$opt_keep_out,
     "unpacked|u=s" => \$opt_unpacked,
     "unpackedzipped=s" => \$opt_unpackedzipped,
+    "outputdir=s" => \$opt_outputdir,
     "info=s"      => \$info,
     "help|?"      => \$help,
+    "debug|d"     => \$opt_debug,
+    "checkword=s" => \$opt_checkword,
     "version|v"   => \$opt_version) or usage(1);
   usage(0) if $help;
   if ($opt_version) {
@@ -133,9 +141,12 @@ sub main() {
   load_words($orig);
   load_dicts($orig);
   search_merge_edict();
-  my $new = File::Temp::tempdir(CLEANUP => !$opt_keep_out);
-  create_output_dir($new);
-  create_dict($orig, $new, $opt_out);
+  exit(0) if $opt_checkword;
+  if (!$opt_outputdir) {
+    $opt_outputdir = File::Temp::tempdir(CLEANUP => !$opt_keep_out);
+  }
+  create_output_dir($opt_outputdir);
+  create_dict($orig, $opt_outputdir, $opt_out);
 }
 
 sub version {
@@ -155,6 +166,8 @@ from edict (and or Japanese3).
 Options:
   -h, --help            Print this message and exit.
   -v, --version         Print version and exit.
+  -d, --debug           Print debug information, a lot of them!
+  --checkword=STR       Checks for translations of word, mostly useful with -d
   --info=STR            Print info found on STR in dictionaries and exit.
   -i, --input=STR       location of the original Kobo GloHD dict
                           default: dicthtml-jaxxdjs.zip
@@ -173,6 +186,7 @@ Options:
   -u, --unpacked=STR    location of an already unpacked original dictionary
   --unpackedzipped=STR  location of an already unpacked original dictionary
                         where the html files are already un-gzipped
+  --outputdir=STR       where the new dictionary is made
 
 Notes:
 * Unpacked dictionaries contain html and gif files that are
@@ -205,10 +219,15 @@ EOF
 
 sub load_words {
   my $loc = shift;
-  open (my $wf, '<:encoding(utf8)', "$loc/words.original") or die "Cannot open $loc/words.original: $?";
-  @words = <$wf>;
-  chomp(@words);
-  close $wf || warn "Cannot close words.original: $?";
+  if ($opt_checkword) {
+    utf8::decode($opt_checkword);
+    push @words, $opt_checkword;
+  } else {
+    open (my $wf, '<:encoding(utf8)', "$loc/words.original") or die "Cannot open $loc/words.original: $?";
+    @words = <$wf>;
+    chomp(@words);
+    close $wf || warn "Cannot close words.original: $?";
+  }
 }
 
 
@@ -238,6 +257,10 @@ sub load_edict {
       $kanastr =~ s/\]$//;
       @kana = split(/;/, $kanastr);
     }
+    # trim edict description string
+    $desc =~ s/^\///;
+    $desc =~ s/EntL[0-9]*X?\/$//;
+    $desc =~ s/\/$//;
     for my $k (@kanji) {
       $k =~ s/\(P\)$//;
       $edict{$k} = $desc;
@@ -343,7 +366,7 @@ sub check_dict {
 # check for existence of translation
 # update the file contents
 sub search_merge_edict {
-  my $nr = $#words;
+  my $nr = $#words + 1;
   my $i = 0;
   my $found_edict = 0;
   my $found_japa = 0;
@@ -352,6 +375,7 @@ sub search_merge_edict {
     $i++;
     my $per = int(($i/$nr)*10000)/100;
     print "\033[Jsearching for words and updating ... ${per}%" . "\033[G";
+    debug("Working on たけ\n");
     my ($a, $b);
     my $foo = $word;
     $foo =~ s/\s//g;
@@ -397,6 +421,7 @@ sub search_merge_edict {
       }
     }
     if ($word2file{$word}) {
+      debug("Found word2file たけ = ", $word2file{$word}, "\n");
       my $hh = $word2file{$word};
       my $w;
       # do the dict check in reverse order so that the first listed dict
@@ -405,9 +430,6 @@ sub search_merge_edict {
         if ($d eq 'edict2') {
           if ($edict{$word}) {
             $w = $edict{$word};
-            $w =~ s/^\///;
-            $w =~ s/EntL[0-9]*X?\/$//;
-            $w =~ s/\/$//;
             $found_edict++;
             $found_total++;
             last DICTS;
@@ -423,61 +445,128 @@ sub search_merge_edict {
           die "Unknown dictionary: $d";
         }
       }
-      # mind the NOT GREEDY search for the first <p>!!! .*?
-      if ($w) {
-        # we should NOT blindly replace this, as we might end up with
-        # things like:
-        # <a name="だけ" /><b>たけ</b>【岳／嶽】<p>only‚ just‚ as<p>《
-        # because Japanese3 ships a direct definitions of だけ which
-        # is here used for replacing the definition os 岳 ...
-        $dictfile{$hh} =~ s/(a name="\Q$word\E".*?)<p>/$1<p>$w<p>/;
-      } else {
-        # this is the case when we might have some kana reading.
-        # check for possible kana readings
-        # the possible list is a set of "KANJI: desc"
-        my @possible_readings;
-        my $source;
-        my $hiraword = $word;
-        # convert to hiragana
-        $hiraword =~ tr/[\x{30A1}-\x{30FF}]/[\x{3041}-\x{3096}]/;
-        DICTSKANA: for my $d (@opt_dicts) {
-          if ($d eq 'edict2') {
-            if ($edictkana{$word}) {
-              @possible_readings = @{$edictkana{$word}};
-              $source = \$found_edict;
-              last DICTSKANA;
-            } 
-            if ($edictkana{$hiraword}) {
-              @possible_readings = @{$edictkana{$hiraword}};
-              $source = \$found_edict;
-              last DICTSKANA;
-            }
-          } elsif ($d eq 'japanese3') {
-            if ($japanese3kana{$word}) {
-              @possible_readings = @{$japanese3kana{$word}};
-              $source = \$found_japa;
-              last DICTSKANA;
-            }
-            if ($japanese3kana{$hiraword}) {
-              @possible_readings = @{$japanese3kana{$hiraword}};
-              $source = \$found_japa;
-              last DICTSKANA;
+      #
+      # we have to catch all entries with the same hiragana value
+      # and replace all of them
+      # mind the (:?....)? which makes perl forget the capture
+      # otherwise all the captures end up in @entry_matches and we
+      # only want the full string
+      my @entry_matches =
+        ($dictfile{$hh} =~ m/(a name="\Q$word\E".*?\/><b>.*?<\/b>(?:〔.*?〕)?(?:【[\p{Hiragana}\p{Katakana}\p{Han}\x{3000}-\x{303F}\x{FF01}-\x{FF5E}\x{31F0}-\x{31FF}\x{3220}-\x{3243}\x{3280}-\x{337F}]*?】)?<p>)/g);
+      debug("FOUND ", $#entry_matches + 1, " MATCHES\n");
+      for my $entry (@entry_matches) {
+        debug("Working on entry match $entry\n");
+        # try to analyse the entry, i.e., check whether there is
+        # a kanji writing associated to it or not
+        # an entry in the Kobo dict looks like
+        # <a name="hiragana" /><b>hiragana reading</b>(【kanji】)?<p>definition
+        my $kanjipart = '';
+        if ($entry =~ m/(a name="\Q$word\E".*?\/>)(<b>.*?<\/b>)(〔.*?〕)?(【[\p{Hiragana}\p{Katakana}\p{Han}\x{3000}-\x{303F}\x{FF01}-\x{FF5E}\x{31F0}-\x{31FF}\x{3220}-\x{3243}\x{3280}-\x{337F}]*?】)?<p>/) {
+          $kanjipart = ($4 ? $4 : '');
+        }
+        $kanjipart =~ s/^【//;
+        $kanjipart =~ s/】$//;
+        debug("kanjipart = $kanjipart\n");
+
+        # mind the NOT GREEDY search for the first <p>!!! .*?
+        if ($w) {
+          debug("entering if w\n");
+          # we should NOT blindly replace this, as we might end up with
+          # things like:
+          # <a name="だけ" /><b>たけ</b>【岳／嶽】<p>only‚ just‚ as<p>《
+          # because Japanese3 ships a direct definitions of だけ which
+          # is here used for replacing the definition os 岳 ...
+          if ($word =~ m/^[\p{Hiragana}]*$/) {
+            # if it is a pure Hiragana word, we replace it only if there
+            # is no $kanjipart
+            debug("entering hiragana check\n");
+            if (!$kanjipart) {
+              debug("replacing in hiragana checkk\n");
+              $dictfile{$hh} =~ s/(a name="\Q$word\E".*?)<p>/$1<p>$w<p>/;
             }
           } else {
-            # actually not necessary
-            die "Unknown dictionary: $d";
+            debug("replacing outside hiragana checkk\n");
+            $dictfile{$hh} =~ s/(a name="\Q$word\E".*?)<p>/$1<p>$w<p>/;
           }
-        }
-        if (@possible_readings) {
-          for my $pa (@possible_readings) {
-            my ($kanji, $desc) = split(': ', $pa, 2);
-            # here there are some cases that we do not cover:
-            # - 【素晴（ら）しい】
-            # - 【岳／嶽】 could be fixed by adding (\p{Kanji}／)* at the
-            #              beginning and end
-            if ($dictfile{$hh} =~ s/(a name="\Q$word\E".*?【\Q$kanji\E】)/$1<p>$desc/) {
-              ${$source}++;
-              $found_total++;
+        } else {
+          debug("entering did not find w\n");
+          # this is the case when we might have some kana reading.
+          # check for possible kana readings
+          # the possible list is a set of "KANJI: desc"
+          my @possible_readings;
+          my $source;
+          my $hiraword = $word;
+          # convert to hiragana
+          $hiraword =~ tr/[\x{30A1}-\x{30FF}]/[\x{3041}-\x{3096}]/;
+          DICTSKANA: for my $d (@opt_dicts) {
+            if ($d eq 'edict2') {
+              if ($edictkana{$word}) {
+                @possible_readings = @{$edictkana{$word}};
+                $source = \$found_edict;
+                last DICTSKANA;
+              } 
+              if ($edictkana{$hiraword}) {
+                @possible_readings = @{$edictkana{$hiraword}};
+                $source = \$found_edict;
+                last DICTSKANA;
+              }
+            } elsif ($d eq 'japanese3') {
+              if ($japanese3kana{$word}) {
+                @possible_readings = @{$japanese3kana{$word}};
+                $source = \$found_japa;
+                last DICTSKANA;
+              }
+              if ($japanese3kana{$hiraword}) {
+                @possible_readings = @{$japanese3kana{$hiraword}};
+                $source = \$found_japa;
+                last DICTSKANA;
+              }
+            } else {
+              # actually not necessary
+              die "Unknown dictionary: $d";
+            }
+          }
+          debug("possible reading @possible_readings\n");
+          if (@possible_readings) {
+            POSSIBLE: for my $pa (@possible_readings) {
+              my ($kanji, $desc) = split(': ', $pa, 2);
+              # here there are some cases that we do not cover:
+              # - 【素晴（ら）しい】
+              # - 【岳／嶽】 - fixed by more complicated regexp
+              my $do_replace = 0;
+              if ($kanjipart) {
+                # split after ／
+                KANJIPART: for my $k (split('／', $kanjipart)) {
+                  debug("checking for $k version $kanji\n");
+                  if ($k eq $kanji) {
+                    $do_replace = 1;
+                    last KANJIPART;
+                  }
+                  # try to remove parenthesis
+                  my $a = $k;
+                  $a =~ s/（//g;
+                  $a =~ s/）//g;
+                  if ($a eq $kanji) {
+                    $do_replace = 1;
+                    last KANJIPART;
+                  }
+                  $a = $k;
+                  $a =~ s/（[^）]*）//g;
+                  if ($a eq $kanji) {
+                    $do_replace = 1;
+                    last KANJIPART;
+                  }
+                }
+              }
+              if ($do_replace) {
+                debug("do replace with $desc\n");
+                $dictfile{$hh} =~ s/(a name="\Q$word\E".*?【\Q$kanjipart\E】)<p>/$1<p>$desc<p>/;
+                ${$source}++;
+                $found_total++;
+                last POSSIBLE;
+              } else {
+                debug("not replacing\n");
+              }
             }
           }
         }
@@ -521,4 +610,7 @@ sub create_dict {
   print "done\n";
 }
 
+sub debug {
+  print STDERR @_ if $opt_debug;
+}
 # vim:set tabstop=2 expandtab: #
