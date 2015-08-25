@@ -7,12 +7,12 @@
 # (C) 2015 Norbert Preining <norbert@preining.info>
 # Licensed under GNU General Public License version 3 or any later version.
 #
-# Version: 0.3DEV
+# Version: 1.0
 #
 # Changelog:
 # v0.1: first working version
 # v0.2: do not depend on ja_JA locale, but use LC_CTYPE="C"
-# v0.3: 
+# v1.0: 
 #     - new mode, ignore the words.original file and simply go through
 #       every entry in the dictionaries
 #     - add translations to hiragana and katakana words
@@ -26,7 +26,6 @@
 # - 7z for unpacking with LANG support and packing up
 #
 # Current status based on 3.16.10 dictionary and edict2 and Japanese3:
-# matches: 296678 (edict: 288031, japanese3: 8647)
 # total entries: 922380, edict: 326064, jap3: 7390
 #
 # NOTES
@@ -37,7 +36,7 @@
 use strict;
 $^W = 1;
 
-my $version = "0.3DEV";
+my $version = "1.0";
 
 use utf8;
 binmode(STDOUT, ":utf8");
