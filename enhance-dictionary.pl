@@ -12,8 +12,11 @@
 # Changelog:
 # v0.1: first working version
 # v0.2: do not depend on ja_JA locale, but use LC_CTYPE="C"
-# v0.3: - add translations to hiragana and katakana words
-#       - translation of multiple Hiragana entries with different Kanjis
+# v0.3: 
+#     - new mode, ignore the words.original file and simply go through
+#       every entry in the dictionaries
+#     - add translations to hiragana and katakana words
+#     - translation of multiple Hiragana entries with different Kanjis
 #
 # Requirements
 # - unix (for now!)
@@ -24,6 +27,7 @@
 #
 # Current status based on 3.16.10 dictionary and edict2 and Japanese3:
 # matches: 296678 (edict: 288031, japanese3: 8647)
+# total entries: 922380, edict: 326064, jap3: 7390
 #
 # NOTES
 # - Hiragana words are searched as *Katakana*, thus the Katakana entries
@@ -61,7 +65,7 @@ my $opt_version = 0;
 my $info;
 my $opt_debug = 0;
 my $opt_checkword;
-my $opt_new;
+my $opt_dev = 0;
 
 # global vars of data
 my %edict;
@@ -92,12 +96,17 @@ sub main() {
     "help|?"      => \$help,
     "debug|d"     => \$opt_debug,
     "checkword=s" => \$opt_checkword,
-    "new" => \$opt_new,
+    "dev" => \$opt_dev,
     "version|v"   => \$opt_version) or usage(1);
   usage(0) if $help;
   if ($opt_version) {
     print version();
     exit(0);
+  }
+  if ($opt_dev) {
+    $opt_unpackedzipped = "orig";
+    $opt_outputdir = "new";
+    $opt_keep_out = 1;
   }
   # try to auto-determine the list of dictionaries if nothing is passed in
   if (!@opt_dicts) {
@@ -140,14 +149,13 @@ sub main() {
     $orig = File::Temp::tempdir(CLEANUP => !$opt_keep_in);
     unpack_original_glohd($opt_jadict, $orig);
   }
-  load_words($orig);
   load_dicts($orig);
-  search_merge_edict();
-  exit(0) if $opt_checkword;
+  exit(0) if ($opt_checkword && !$opt_dev);
   if (!$opt_outputdir) {
     $opt_outputdir = File::Temp::tempdir(CLEANUP => !$opt_keep_out);
   }
   create_output_dir($opt_outputdir);
+  exit(0) if $opt_dev;
   create_dict($orig, $opt_outputdir, $opt_out);
 }
 
@@ -218,21 +226,6 @@ EOF
 ;
   exit($exitcode);
 }
-
-sub load_words {
-  my $loc = shift;
-  if ($opt_checkword) {
-    utf8::decode($opt_checkword);
-    push @words, $opt_checkword;
-  } else {
-    open (my $wf, '<:encoding(utf8)', "$loc/words.original") or die "Cannot open $loc/words.original: $?";
-    @words = <$wf>;
-    chomp(@words);
-    close $wf || warn "Cannot close words.original: $?";
-  }
-}
-
-
 
 #
 # load edict data from file
@@ -322,14 +315,20 @@ sub load_dicts {
   my @hf = <"$loc/*.html">;
   my $nr = $#hf;
   my $i = 0;
+  my $entries_total = 0;
+  my $trans_edict = 0;
+  my $trans_jap3  = 0;
   for my $f (@hf) {
     $i++;
     my $per = int(($i/$nr)*10000)/100;
-    print "\033[Jloading dict files ... ${per}%" . "\033[G";
+    print "\033[Jloading and merging dict files ... ${per}%" . "\033[G";
     my $n = $f;
     utf8::decode($n);
     $n =~ s/^$loc\/(.*)\.html/$1/;
-    #print "reading file $n (.html)\n";
+    if ($opt_dev && $opt_checkword) {
+      next if ($n ne $opt_checkword);
+    }
+    debug("reading file $n (.html)\n");
     local $/;
     my $wf;
     if ($opt_unpackedzipped) {
@@ -339,279 +338,140 @@ sub load_dicts {
     }
     my $str = <$wf> ;
     close $wf || warn "Cannot close $f: $?";
-    if (!$opt_new) {
-      $dictfile{$n} = $str ;
-    } else {
-      print STDERR "\n ======== $n ========\n";
-      my $new = '';
-      if ($str =~ m/^(.*?<a name=")/g) {
-        $new .= $1;
-      } else {
-        die "Cannot parse $n.";
-      }
-      while ($str =~ m/(.*?(<a name="|$))/g) {
-        print STDERR "found $1\n";
-        if ($1) {
-          # we get one return value with empty match!
-          my $entry = $1;
-          # work on the entry and replace strings ...
-          # and add it to $new
-        }
-      }
-      # this is already the replaced entry!
-      $dictfile{$n} = $new;
-    }
+    # this is already the replaced entry!
+    $dictfile{$n} = update_definition($n, $str, \$entries_total, \$trans_edict, \$trans_jap3 );
   }
-  print "loading dict files ... done\n";
-  exit(1) if $opt_new;
+  print "loading and merging dict files ... done\n";
+  print "total entries: $entries_total, edict: $trans_edict, jap3: $trans_jap3\n";
 }
-
-# returns 0 on success
-#         1 on doctfile not found
-#         2 on dictfile exists but tag not found
-sub check_dict {
-  my ($word, $d, $verb) = @_;
-  if ($dictfile{$d}) {
-    if (grep(/name="\Q$word\E"/, $dictfile{$d})) {
-      $word2file{$word} = $d;
-      return 0;
-    } else {
-      print "\nname tag not found for $word in $d\n" if $verb;
-      return 2;
-    }
+ 
+sub update_definition {
+  my ($n, $str, $totalref, $edictref, $japref) = @_;
+  my $new = '';
+  # read in header of file
+  if ($str =~ m/^(.*?<a name=")/g) {
+    $new .= $1;
   } else {
-    print "\nnot found $word (d=$d)\n" if $verb;
-    return 1;
+    die "Cannot parse $n.";
   }
-}
-
-#
-# core routine
-# search the correct file for an entry
-# check for existence of translation
-# update the file contents
-sub search_merge_edict {
-  my $nr = $#words + 1;
-  my $i = 0;
-  my $found_edict = 0;
-  my $found_japa = 0;
-  my $found_total = 0;
-  for my $word (@words) {
-    $i++;
-    my $per = int(($i/$nr)*10000)/100;
-    print "\033[Jsearching for words and updating ... ${per}%" . "\033[G";
-    my ($a, $b);
-    my $foo = $word;
-    $foo =~ s/\s//g;
-    if ($foo =~ m/^(.)(.)/) {
-      $a = $1;
-      $b = $2;
-    } else {
-      $a = $word;
-    }
-    $a = lc($a);
-    $b = lc($b) if $b;
-    if ($a =~ m/[\p{Hiragana}\p{Katakana}a-z]/) {
-      if ($b) {
-        if (check_dict($word,"$a$b",0) != 0) {
-          if ($a =~ m/[a-z]/) {
-            if (check_dict($word,"${a}1",0) != 0) {
-              if (check_dict($word,"${a}a",0) != 0) {
-                check_dict($word, "11", 1);
+  while ($str =~ m/(.*?(<a name="|$))/g) {
+    # debug("===found $1\n");
+    if ($1) {
+      ${$totalref}++;
+      # we get one return value with empty match!
+      my $entry = $1;
+      my $nentry = '';
+      # we can have img stuff interspersed!!!
+      if ($entry =~ m!^(?:<img src=.*?</img>)?([^"]*)(?:<img src=.*?</img>)?([^"]*)(?:<img src=.*?</img>)?"\s*/>(<b>.*?</b>)?(〔.*?〕)?(【.*?】)?(.*?)<p>(.*)$!) {
+        my $key = '';
+        my $reading = $3;
+        my $something = $4;
+        my $kanjipart = $5;
+        my $something2 = $6;
+        my $definition = $7;
+        $key .= $1 if $1; $key .= $2 if $2;
+        # the kanji part can have the following forms:
+        # - roman letters only
+        # - kanji with （）and ／
+        my $w;
+        if ($kanjipart) {
+          $kanjipart =~ s/^【//;
+          $kanjipart =~ s/】$//;
+          # split after ／
+          KANJIPART: for my $k (split('／', $kanjipart)) {
+            my $s;
+            ($w, $s) = find_translation($k);
+            if ($w) {
+              ${$edictref}++ if ($s eq "edict");
+              ${$japref}++  if ($s eq "japanese3");
+              $definition = "$w<p>$definition";
+              last KANJIPART;
+            }
+            # try to remove parenthesis
+            my $a = $k;
+            $a =~ s/（//g;
+            $a =~ s/）//g;
+            if ($a ne $k) {
+              ($w, $s) = find_translation($a);
+              if ($w) {
+                ${$edictref}++ if ($s eq "edict");
+                ${$japref}++  if ($s eq "japanese3");
+                $definition = "$w<p>$definition";
+                last KANJIPART;
               }
             }
-          } else {
-            print "\ngiving up(2): $word (ab=$a$b)\n";
+            $a = $k;
+            $a =~ s/（[^）]*）//g;
+            if ($a ne $k) {
+              ($w, $s) = find_translation($a);
+              if ($w) {
+                ${$edictref}++ if ($s eq "edict");
+                ${$japref}++  if ($s eq "japanese3");
+                $definition = "$w<p>$definition";
+                last KANJIPART;
+              }
+            }
           }
+        }
+        $nentry = $entry;
+        if ($w) {
+          $nentry =~ s/(【.*?】)(.*?)<p>/$1$2<p>$w<p>/;
         }
       } else {
-        if (check_dict($word,$a,0) != 0) {
-          if (check_dict($word,"${a}a",0) != 0) {
-            check_dict($word,"11", 1);
-          }
-        }
+        print "cannot parse entry in $n: $entry\n";
+        $nentry = $entry;
       }
-    } else {
-      if (check_dict($word,$a,0) != 0) {
-        if (check_dict($word,"11",0) != 0) {
-          if (check_dict($word,"${a}a", 0) != 0) {
-            if ($b) {
-              check_dict($word,"1$b", 1)
-            } else {
-              print "\ngiving up(1): $word (a=$a)\n";
-            }
-          }
-        }
-      }
-    }
-    if ($word2file{$word}) {
-      my $hh = $word2file{$word};
-      my $w;
-      # do the dict check in reverse order so that the first listed dict
-      # provides the proper value
-      DICTS: for my $d (@opt_dicts) {
-        if ($d eq 'edict2') {
-          if ($edict{$word}) {
-            $w = $edict{$word};
-            $found_edict++;
-            $found_total++;
-            last DICTS;
-          }
-        } elsif ($d eq 'japanese3') {
-          if ($japanese3{$word}) {
-            $found_japa++;
-            $found_total++;
-            $w = $japanese3{$word};
-            last DICTS;
-          }
-        } else {
-          die "Unknown dictionary: $d";
-        }
-      }
-      #
-      # we have to catch all entries with the same hiragana value
-      # and replace all of them
-      # mind the (:?....)? which makes perl forget the capture
-      # otherwise all the captures end up in @entry_matches and we
-      # only want the full string
-      my @entry_matches =
-        ($dictfile{$hh} =~ m/(a name="\Q$word\E".*?\/><b>.*?<\/b>(?:〔.*?〕)?(?:【[\p{Hiragana}\p{Katakana}\p{Han}\x{3000}-\x{303F}\x{FF01}-\x{FF5E}\x{31F0}-\x{31FF}\x{3220}-\x{3243}\x{3280}-\x{337F}]*?】)?<p>)/g);
-      debug("FOUND ", $#entry_matches + 1, " MATCHES\n");
-      for my $entry (@entry_matches) {
-        debug("Working on entry match $entry\n");
-        # try to analyse the entry, i.e., check whether there is
-        # a kanji writing associated to it or not
-        # an entry in the Kobo dict looks like
-        # <a name="hiragana" /><b>hiragana reading</b>(【kanji】)?<p>definition
-        my $kanjipart = '';
-        if ($entry =~ m/(a name="\Q$word\E".*?\/>)(<b>.*?<\/b>)(〔.*?〕)?(【[\p{Hiragana}\p{Katakana}\p{Han}\x{3000}-\x{303F}\x{FF01}-\x{FF5E}\x{31F0}-\x{31FF}\x{3220}-\x{3243}\x{3280}-\x{337F}]*?】)?<p>/) {
-          $kanjipart = ($4 ? $4 : '');
-        }
-        $kanjipart =~ s/^【//;
-        $kanjipart =~ s/】$//;
-        debug("kanjipart = $kanjipart\n");
-
-        # mind the NOT GREEDY search for the first <p>!!! .*?
-        if ($w) {
-          debug("entering if w\n");
-          # we should NOT blindly replace this, as we might end up with
-          # things like:
-          # <a name="だけ" /><b>たけ</b>【岳／嶽】<p>only‚ just‚ as<p>《
-          # because Japanese3 ships a direct definitions of だけ which
-          # is here used for replacing the definition os 岳 ...
-          if ($word =~ m/^[\p{Hiragana}]*$/) {
-            # if it is a pure Hiragana word, we replace it only if there
-            # is no $kanjipart
-            debug("entering hiragana check\n");
-            if (!$kanjipart) {
-              debug("replacing in hiragana checkk\n");
-              $dictfile{$hh} =~ s/(a name="\Q$word\E".*?)<p>/$1<p>$w<p>/;
-            }
-          } else {
-            debug("replacing outside hiragana checkk\n");
-            $dictfile{$hh} =~ s/(a name="\Q$word\E".*?)<p>/$1<p>$w<p>/;
-          }
-        } else {
-          debug("entering did not find w\n");
-          # this is the case when we might have some kana reading.
-          # check for possible kana readings
-          # the possible list is a set of "KANJI: desc"
-          my @possible_readings;
-          my $source;
-          my $hiraword = $word;
-          # convert to hiragana
-          $hiraword =~ tr/[\x{30A1}-\x{30FF}]/[\x{3041}-\x{3096}]/;
-          DICTSKANA: for my $d (@opt_dicts) {
-            if ($d eq 'edict2') {
-              if ($edictkana{$word}) {
-                @possible_readings = @{$edictkana{$word}};
-                $source = \$found_edict;
-                last DICTSKANA;
-              } 
-              if ($edictkana{$hiraword}) {
-                @possible_readings = @{$edictkana{$hiraword}};
-                $source = \$found_edict;
-                last DICTSKANA;
-              }
-            } elsif ($d eq 'japanese3') {
-              if ($japanese3kana{$word}) {
-                @possible_readings = @{$japanese3kana{$word}};
-                $source = \$found_japa;
-                last DICTSKANA;
-              }
-              if ($japanese3kana{$hiraword}) {
-                @possible_readings = @{$japanese3kana{$hiraword}};
-                $source = \$found_japa;
-                last DICTSKANA;
-              }
-            } else {
-              # actually not necessary
-              die "Unknown dictionary: $d";
-            }
-          }
-          debug("possible reading @possible_readings\n");
-          if (@possible_readings) {
-            POSSIBLE: for my $pa (@possible_readings) {
-              my ($kanji, $desc) = split(': ', $pa, 2);
-              # here there are some cases that we do not cover:
-              # - 【素晴（ら）しい】
-              # - 【岳／嶽】 - fixed by more complicated regexp
-              my $do_replace = 0;
-              if ($kanjipart) {
-                # split after ／
-                KANJIPART: for my $k (split('／', $kanjipart)) {
-                  debug("checking for $k version $kanji\n");
-                  if ($k eq $kanji) {
-                    $do_replace = 1;
-                    last KANJIPART;
-                  }
-                  # try to remove parenthesis
-                  my $a = $k;
-                  $a =~ s/（//g;
-                  $a =~ s/）//g;
-                  if ($a eq $kanji) {
-                    $do_replace = 1;
-                    last KANJIPART;
-                  }
-                  $a = $k;
-                  $a =~ s/（[^）]*）//g;
-                  if ($a eq $kanji) {
-                    $do_replace = 1;
-                    last KANJIPART;
-                  }
-                }
-              }
-              if ($do_replace) {
-                debug("do replace with $desc\n");
-                $dictfile{$hh} =~ s/(a name="\Q$word\E".*?【\Q$kanjipart\E】)<p>/$1<p>$desc<p>/;
-                ${$source}++;
-                $found_total++;
-                last POSSIBLE;
-              } else {
-                debug("not replacing\n");
-              }
-            }
-          }
-        }
-      }
+      $new .= $nentry;
     }
   }
-  print "searching for words and updating ... done\n";
-  print "total words $nr, matches: $found_total (edict: $found_edict, japanese3: $found_japa)\n";
+  return($new);
+}
+
+sub find_translation {
+  my $word = shift;
+  debug("find_translation: searching for $word\n");
+  # do the dict check in reverse order so that the first listed dict
+  # provides the proper value
+  my $w;
+  my $s;
+  for my $d (@opt_dicts) {
+    if ($d eq 'edict2') {
+      if ($edict{$word}) {
+        $w = $edict{$word};
+        $s = "edict";
+        last;
+      }
+    } elsif ($d eq 'japanese3') {
+      if ($japanese3{$word}) {
+        $w = $japanese3{$word};
+        $s = "japanese3";
+        last;
+      }
+    } else {
+      die "Unknown dictionary: $d";
+    }
+  }
+  debug("find_translation: found hit for $word: $w\n") if $w;
+  return ($w, $s);
 }
 
 sub create_output_dir {
   my $newdir = shift;
   mkdir $newdir || die "cannot create $newdir: $?";
   my @dk = keys(%dictfile);
-  my $nr = $#dk;
+  my $nr = $#dk + 1;
   my $i = 0;
   for my $k (@dk) {
     $i++;
     my $per = int(($i/$nr)*10000)/100;
     print "\033[Jcreating output html ... ${per}%" . "\033[G";
+    next if ($opt_dev && $opt_checkword && ($opt_checkword ne $k));
     my $fh;
-    open $fh, ">:gzip:utf8", "$newdir/$k.html" || die "cannot open $newdir/$k.html: $?";
+    if ($opt_dev) {
+      open $fh, ">:utf8", "$newdir/$k.html" || die "cannot open $newdir/$k.html: $?";
+    } else {
+      open $fh, ">:gzip:utf8", "$newdir/$k.html" || die "cannot open $newdir/$k.html: $?";
+    }
     print $fh $dictfile{$k};
     close $fh;
   }
