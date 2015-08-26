@@ -7,7 +7,7 @@
 # (C) 2015 Norbert Preining <norbert@preining.info>
 # Licensed under GNU General Public License version 3 or any later version.
 #
-# Version: 1.0
+# Version: 1.1dev
 #
 # Changelog:
 # v0.1: first working version
@@ -17,6 +17,8 @@
 #       every entry in the dictionaries
 #     - add translations to hiragana and katakana words
 #     - translation of multiple Hiragana entries with different Kanjis
+# v1.1:
+#     - more error checking
 #
 # Requirements
 # - unix (for now!)
@@ -234,9 +236,16 @@ sub load_edict {
   my $edict = shift;
   print "loading edict2 ... ";
   open (my $wf, '<:encoding(utf8)', $edict) or die "Cannot open $edict: $?";
+  my $line = 0;
   while (<$wf>) {
+    $line++;
     chomp;
+    next if m/^\s*$/;
     my @fields = split(" ", $_, 2);
+    if ($#fields < 0) {
+      warning("Cannot find first field, skipping. Line nr $line, =$_");
+      next;
+    }
     my @kanji = split(/;/,$fields[0]);
     my $desc;
     my $kanastr;
@@ -252,6 +261,10 @@ sub load_edict {
       @kana = split(/;/, $kanastr);
     }
     # trim edict description string
+    if (!$desc) {
+      warning("Didn't get description, skipping. Line nr $line, =$_");
+      next;
+    }
     $desc =~ s/^\///;
     $desc =~ s/EntL[0-9]*X?\/$//;
     $desc =~ s/\/$//;
@@ -494,5 +507,8 @@ sub create_dict {
 
 sub debug {
   print STDERR @_ if $opt_debug;
+}
+sub warning {
+  print STDERR @_;
 }
 # vim:set tabstop=2 expandtab: #
