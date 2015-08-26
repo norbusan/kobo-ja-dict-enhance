@@ -20,6 +20,11 @@
 # v1.1:
 #     - more error checking
 #
+# TODO
+# - add switch --all (or similar) which includes definitions
+#   from *all* used dictionaries. This way one could create a
+#   dictionary with both German and English translations
+#
 # Requirements
 # - unix (for now!)
 # - several Perl modules: Getopt::Long, File::Temp, File::Basename, Cwd
@@ -61,6 +66,7 @@ my $opt_keep_out = 0;
 my $opt_unpacked;
 my $opt_unpackedzipped;
 my $help = 0;
+my $opt_merge = 0;
 my $opt_version = 0;
 my $info;
 my $opt_debug = 0;
@@ -68,13 +74,8 @@ my $opt_checkword;
 my $opt_dev = 0;
 
 # global vars of data
-my %edict;
-my %edictkana;
-my %japanese3;
-my %japanese3kana;
-my %word2file;
+my @dicts;
 my %dictfile;
-my @words;
 
 $| = 1; #autoflush
 
@@ -84,9 +85,8 @@ sub main() {
   GetOptions(
     "input|i=s"   => \$opt_jadict,
     "output|o=s"  => \$opt_out,
-    "dicts=s"     => \@opt_dicts,
-    "japanese3=s" => \$opt_japanese3,
-    "edict|e=s"   => \$opt_edict,
+    "dict=s"     => \@opt_dicts,
+    "merge"       => \$opt_merge,
     "keep-input"  => \$opt_keep_in,
     "keep-output" => \$opt_keep_out,
     "unpacked|u=s" => \$opt_unpacked,
@@ -110,8 +110,8 @@ sub main() {
   }
   # try to auto-determine the list of dictionaries if nothing is passed in
   if (!@opt_dicts) {
-    push @opt_dicts, 'edict2' if (-r $opt_edict);
-    push @opt_dicts, 'japanese3' if (-r $opt_japanese3);
+    push @opt_dicts, "edict2:$opt_edict" if (-r $opt_edict);
+    push @opt_dicts, "japanese3:$opt_japanese3" if (-r $opt_japanese3);
   }
   if (@opt_dicts) {
     print "Using the following dictionaries as source for translations: @opt_dicts\n";
@@ -119,21 +119,32 @@ sub main() {
     die "No dictionary found or not readable, exiting.";
   }
   for my $d (@opt_dicts) {
-    if ($d eq 'edict2') {
-      load_edict($opt_edict);
-    } elsif ($d eq 'japanese3') {
-      load_japanese3($opt_japanese3);
+    my $type;
+    my $path;
+    if ($d =~ m/^(.*?:)?(.*)$/) {
+      $type = ($1 ? $1 : "edict2");
+      $path = $2;
+      $type =~ s/:$//;
+      if (! -r $path) {
+        die "Cannot read $path.";
+      }
+      if ($type eq 'edict2') {
+        push @dicts, load_edict($path);
+      } elsif ($type eq 'japanese3') {
+        push @dicts, load_japanese3($path);
+      } else {
+        die "Unknown dictionary type: $type";
+      }
     } else {
-      die "Unknown dictionary: $d";
+      die "Cannot parse argument: $d";
     }
   }
   if ($info) {
     utf8::decode($info);
     print "Info on $info:\n";
-    print "Edict entry found: $edict{$info}\n" if ($edict{$info});
-    print "EdictKana entry found: @{$edictkana{$info}}\n" if ($edictkana{$info});
-    print "Japanese3 entry found: $japanese3{$info}\n" if ($japanese3{$info});
-    print "Japanese3Kana entry found: @{$japanese3kana{$info}}\n" if ($japanese3kana{$info});
+    for my $d (@dicts) {
+      print "Found >", $d->{$info}, "< in ", $d->{'__FILE'}, "\n" if ($d->{$info});
+    }
     exit(0);
   }
   my $orig;
@@ -149,7 +160,7 @@ sub main() {
     $orig = File::Temp::tempdir(CLEANUP => !$opt_keep_in);
     unpack_original_glohd($opt_jadict, $orig);
   }
-  load_dicts($orig);
+  load_merge_dicts($orig);
   exit(0) if ($opt_checkword && !$opt_dev);
   if (!$opt_outputdir) {
     $opt_outputdir = File::Temp::tempdir(CLEANUP => !$opt_keep_out);
@@ -176,27 +187,39 @@ from edict2 dictionaries (and or Japanese3).
 Options:
   -h, --help            Print this message and exit.
   -v, --version         Print version and exit.
-  -d, --debug           Print debug information, a lot of them!
-  --checkword=STR       Checks for translations of word, mostly useful with -d
-  --info=STR            Print info found on STR in dictionaries and exit.
   -i, --input=STR       location of the original Kobo GloHD dict
                           default: dicthtml-jaxxdjs.zip
   -o, --output=STR      name of the output file
                           default: dicthtml-jaxxdjs-TIMESTAMP.zip
-  --dicts=STR           dictionaries to be used, can be given multiple times
-                        possible values are 'edict2' and 'japanese3'
-                        The order determines the priority of the dictionary.
-                        If *not* given, all found dictionaries are used.
-  -e, --edict=STR       location of the edict2 file
-                          default: edict2
-  -j, --japanese3=STR   location of the japanese3 file
-                          default: japanese3-data
-  --keep-input          keep the unpacked directory
-  --keep-output         keep the updated output directory
+  --dict=[TYPE:]PATH    specify a dictionary to use
+                          TYPE can be either 'edict2' or 'japanese3'
+                            if TYPE is missing 'edict2' is assumed
+                          PATH gives the path to the dictionary
+                          if nothing is specified, the program checks for
+                          files 'edict2' and 'japanese3-data'
   -u, --unpacked=STR    location of an already unpacked original dictionary
   --unpackedzipped=STR  location of an already unpacked original dictionary
                         where the html files are already un-gzipped
   --outputdir=STR       where the new dictionary is made
+
+Debugging and development options:
+  -d, --debug           Print debug information, a lot of them!
+  --checkword=STR       Checks for translations of word, mostly useful with -d
+  --info=STR            Print info found on STR in dictionaries and exit.
+  --keep-input          keep the unpacked directory
+  --keep-output         keep the updated output directory
+
+Examples:
+
+  enhance-dictionary.pl
+
+    will use files 'edict2' and 'japanese3-data' if they are found
+    in the current working directory.
+
+  enhance-dictionary.pl --dict=wadokudict
+    
+    will use the edict2 formatted Wadoku (Japanese-German) dictionary
+
 
 Notes:
 * Unpacked dictionaries contain html and gif files that are
@@ -205,8 +228,9 @@ Notes:
   html files still need to be gzipped. If you have already unpacked
   the html file, you can use --unpackedzipped.
 
-* Dictionaries: at the moment edict2 (free) and Japanese3 (commercial) are
-  supported. But as far as I see they are overlapping to a very high
+* Dictionaries: at the moment edict2 style dictionaries and
+  Japanese3 (commercial) are supported. 
+  But as far as I see they are overlapping to a very high
   percentage. So keeping with edict2 is fine.
 
 * The edict file can be downloaded from 
@@ -236,8 +260,12 @@ EOF
 # - evaluate hiragana???
 sub load_edict {
   my $edict = shift;
-  print "loading edict2 ... ";
+  my %edict;
+  $edict{'__TYPE'} = 'edict2';
+  $edict{'__FILE'} = $edict;
+  $edict{'__USED'} = 0;
   open (my $wf, '<:encoding(utf8)', $edict) or die "Cannot open $edict: $?";
+  print "loading edict2 type from $edict ... ";
   my $line = 0;
   while (<$wf>) {
     $line++;
@@ -250,17 +278,12 @@ sub load_edict {
     }
     my @kanji = split(/;/,$fields[0]);
     my $desc;
-    my $kanastr;
-    my @kana;
     # if the line is an entry for a Katakana/Hiragana word, there is 
     # no second field and the next one is immediately the English
     if ($fields[1] =~ m/^\//) {
       $desc = $fields[1];
     } else {
-      ($kanastr, $desc) = split(" ", $fields[1], 2);
-      $kanastr =~ s/^\[//;
-      $kanastr =~ s/\]$//;
-      @kana = split(/;/, $kanastr);
+      (undef, $desc) = split(" ", $fields[1], 2);
     }
     # trim edict description string
     if (!$desc) {
@@ -273,23 +296,20 @@ sub load_edict {
     for my $k (@kanji) {
       $k =~ s/\(P\)$//;
       $edict{$k} = $desc;
-      for my $ka (@kana) {
-        $ka =~ s/\(P\)$//;
-        push @{$edictkana{$ka}}, "$k: $desc";
-      }
     }
   }
   print "done\n";
+  return \%edict;
 }
 
 sub load_japanese3 {
   my $f = shift;
-  return if (!$f);
-  if (! -r $f) {
-    die "Cannot read Japanese3 data file $f: $?";
-  }
-  print "loading Japanese3 data ... ";
+  my %japanese3;
+  $japanese3{'__TYPE'} = 'japanese3';
+  $japanese3{'__FILE'} = $f;
+  $japanese3{'__USED'} = 0;
   open (my $wf, '<:encoding(utf8)', $f) or die "Cannot open $f: $?";
+  print "loading Japanese3 data from $f ... ";
   while (<$wf>) {
     chomp;
     # mind the ' and \ here, we have to ship in a regexp where | is escaped!
@@ -299,12 +319,10 @@ sub load_japanese3 {
     my $desc = $fields[2];
     if ($kanj && $desc) {
       $japanese3{$kanj} = $desc;
-      if ($furi) {
-        push @{$japanese3kana{$furi}}, "$kanj: $desc";
-      }
     }
   }
   print "done\n";
+  return \%japanese3;
   #print Dumper(\%japanese3);
   #exit 1;
 }
@@ -323,7 +341,7 @@ sub unpack_original_glohd {
   print "done\n";
 }
 
-sub load_dicts {
+sub load_merge_dicts {
   my $loc = shift;
   # first load all dictionary files
   my @hf = <"$loc/*.html">;
@@ -353,14 +371,17 @@ sub load_dicts {
     my $str = <$wf> ;
     close $wf || warn "Cannot close $f: $?";
     # this is already the replaced entry!
-    $dictfile{$n} = update_definition($n, $str, \$entries_total, \$trans_edict, \$trans_jap3 );
+    $dictfile{$n} = update_definition($n, $str, \$entries_total);
   }
   print "loading and merging dict files ... done\n";
-  print "total entries: $entries_total, edict: $trans_edict, jap3: $trans_jap3\n";
+  print "total entries: $entries_total\n";
+  for my $d (@dicts) {
+    print "entries used from ", $d->{'__FILE'}, ": ", $d->{'__USED'}, "\n";
+  }
 }
  
 sub update_definition {
-  my ($n, $str, $totalref, $edictref, $japref) = @_;
+  my ($n, $str, $totalref) = @_;
   my $new = '';
   # read in header of file
   if ($str =~ m/^(.*?<a name=")/g) {
@@ -394,36 +415,18 @@ sub update_definition {
           # split after ／
           KANJIPART: for my $k (split('／', $kanjipart)) {
             my $s;
-            ($w, $s) = find_translation($k);
-            if ($w) {
-              ${$edictref}++ if ($s eq "edict");
-              ${$japref}++  if ($s eq "japanese3");
-              $definition = "$w<p>$definition";
-              last KANJIPART;
-            }
+            last KANJIPART if ($w = find_translation($k));
             # try to remove parenthesis
             my $a = $k;
             $a =~ s/（//g;
             $a =~ s/）//g;
             if ($a ne $k) {
-              ($w, $s) = find_translation($a);
-              if ($w) {
-                ${$edictref}++ if ($s eq "edict");
-                ${$japref}++  if ($s eq "japanese3");
-                $definition = "$w<p>$definition";
-                last KANJIPART;
-              }
+              last KANJIPART if ($w = find_translation($a));
             }
             $a = $k;
             $a =~ s/（[^）]*）//g;
             if ($a ne $k) {
-              ($w, $s) = find_translation($a);
-              if ($w) {
-                ${$edictref}++ if ($s eq "edict");
-                ${$japref}++  if ($s eq "japanese3");
-                $definition = "$w<p>$definition";
-                last KANJIPART;
-              }
+              last KANJIPART if ($w = find_translation($a));
             }
           }
         }
@@ -446,27 +449,18 @@ sub find_translation {
   debug("find_translation: searching for $word\n");
   # do the dict check in reverse order so that the first listed dict
   # provides the proper value
-  my $w;
-  my $s;
-  for my $d (@opt_dicts) {
-    if ($d eq 'edict2') {
-      if ($edict{$word}) {
-        $w = $edict{$word};
-        $s = "edict";
-        last;
-      }
-    } elsif ($d eq 'japanese3') {
-      if ($japanese3{$word}) {
-        $w = $japanese3{$word};
-        $s = "japanese3";
-        last;
-      }
-    } else {
-      die "Unknown dictionary: $d";
+  my @w;
+  for my $d (@dicts) {
+    my $tw = $d->{$word};
+    if ($tw) {
+      $d->{'__USED'} = $d->{'__USED'} + 1;
+      push @w, $tw;
+      last if (!$opt_merge);
     }
   }
+  my $w = join('<p>', @w);
   debug("find_translation: found hit for $word: $w\n") if $w;
-  return ($w, $s);
+  return $w;
 }
 
 sub create_output_dir {
