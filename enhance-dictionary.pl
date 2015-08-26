@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 #
 # enhance-dictionary.pl
-# Update a Kobo GloHD Japanese dictionary with English definitions
-# from the edict project.
+# Update a Kobo GloHD Japanese dictionary with definitions
+# from edict2 dictionaries and Japanese3 dictionary.
 #
 # (C) 2015 Norbert Preining <norbert@preining.info>
 # Licensed under GNU General Public License version 3 or any later version.
@@ -27,18 +27,17 @@
 #   from gzipped files
 # - 7z for unpacking with LANG support and packing up
 #
-# Current status based on 3.16.10 dictionary and edict2 and Japanese3:
-# total entries: 922380, edict: 326064, jap3: 7390
-#
-# NOTES
-# - Hiragana words are searched as *Katakana*, thus the Katakana entries
-#   need to be translated!
+# Current status based on 3.17.3 dictionary:
+# edict2 + japanese3
+#   total entries: 922380, edict: 326064, jap3: 7390
+# wadoku German edict2
+#   total entries: 922380, edict: 368943, jap3: 0
 #
 
 use strict;
 $^W = 1;
 
-my $version = "1.0";
+my $version = "1.1dev";
 
 use utf8;
 binmode(STDOUT, ":utf8");
@@ -171,8 +170,8 @@ sub usage {
   print <<"EOF";
 Usage: $prog [OPTIONS]
 
-Update the Kobo GloHD Japanese dictionary with English definitions
-from edict (and or Japanese3).
+Update the Kobo GloHD Japanese dictionary with definitions
+from edict2 dictionaries (and or Japanese3).
 
 Options:
   -h, --help            Print this message and exit.
@@ -213,6 +212,9 @@ Notes:
 * The edict file can be downloaded from 
   http://ftp.monash.edu.au/pub/nihongo/edict2.gz
   Afterwards the file needs to be unpacked with 'gunzip edict2.gz'
+
+* For German translations get the Edict2 version of Wadoku from
+  http://www.wadoku.de/wiki/display/WAD/Downloads+und+Links
 
 * The 'japanese3-data' file has to be generated from the Japanese3 iPhone
   application https://itunes.apple.com/en/app/japanese/id290664053
