@@ -7,7 +7,7 @@
 # (C) 2015 Norbert Preining <norbert@preining.info>
 # Licensed under GNU General Public License version 3 or any later version.
 #
-# Version: 1.1dev
+# Version: 1.1
 #
 # Changelog:
 # v0.1: first working version
@@ -19,11 +19,8 @@
 #     - translation of multiple Hiragana entries with different Kanjis
 # v1.1:
 #     - more error checking
-#
-# TODO
-# - add switch --all (or similar) which includes definitions
-#   from *all* used dictionaries. This way one could create a
-#   dictionary with both German and English translations
+#     - allow for several edict style dictionaries
+#     - allow for merging of definitions instead of picking the first
 #
 # Requirements
 # - unix (for now!)
@@ -42,7 +39,7 @@
 use strict;
 $^W = 1;
 
-my $version = "1.1dev";
+my $version = "1.1";
 
 use utf8;
 binmode(STDOUT, ":utf8");
@@ -255,9 +252,8 @@ EOF
 }
 
 #
-# load edict data from file
-# TODO:
-# - evaluate hiragana???
+#
+#
 sub load_edict {
   my $edict = shift;
   my %edict;
