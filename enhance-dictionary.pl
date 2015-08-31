@@ -493,7 +493,7 @@ sub create_dict {
   }
   my $out = abs_path($opt_out);
   print "creating update dictionary in $opt_out ... ";
-  `cd \"$new\" ; 7z a \"$out\" *`;
+  `cd \"$new\" ; 7z a \"$out\" .`;
   print "done\n";
 }
 
