@@ -333,7 +333,7 @@ sub unpack_original_glohd {
   if (! $opt_jadict) {
     die "Cannot determine abs path of $opt_jadict: $?";
   }
-  `cd $orig ; LC_CTYPE=C 7z x \"$opt_jadict\"`;
+  `cd $orig ; LC_CTYPE=C 7z x -y \"$opt_jadict\"`;
   print "done\n";
 }
 
