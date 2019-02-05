@@ -260,7 +260,7 @@ sub load_edict {
   $edict{'__TYPE'} = 'edict2';
   $edict{'__FILE'} = $edict;
   $edict{'__USED'} = 0;
-  open (my $wf, '<:encoding(utf8)', $edict) or die "Cannot open $edict: $?";
+  open (my $wf, '<:encoding(euc-jp)', $edict) or die "Cannot open $edict: $?";
   print "loading edict2 type from $edict ... ";
   my $line = 0;
   while (<$wf>) {
