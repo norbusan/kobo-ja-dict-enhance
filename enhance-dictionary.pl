@@ -260,7 +260,7 @@ sub load_edict {
   $edict{'__TYPE'} = 'edict2';
   $edict{'__FILE'} = $edict;
   $edict{'__USED'} = 0;
-  open (my $wf, '<:encoding(utf8)', $edict) or die "Cannot open $edict: $?";
+  open (my $wf, '<:encoding(euc-jp)', $edict) or die "Cannot open $edict: $?";
   print "loading edict2 type from $edict ... ";
   my $line = 0;
   while (<$wf>) {
@@ -333,7 +333,7 @@ sub unpack_original_glohd {
   if (! $opt_jadict) {
     die "Cannot determine abs path of $opt_jadict: $?";
   }
-  `cd $orig ; LC_CTYPE=C 7z x \"$opt_jadict\"`;
+  `cd $orig ; LC_CTYPE=C 7z x -y \"$opt_jadict\"`;
   print "done\n";
 }
 
