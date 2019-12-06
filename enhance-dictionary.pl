@@ -24,9 +24,9 @@
 #
 # Requirements
 # - unix (for now!)
-# - several Perl modules: Getopt::Long, File::Temp, File::Basename, Cwd
-#   (all standard). Also PerlIO:gzip is needed to read/write directly
-#   from gzipped files
+# - several Perl modules: Getopt::Long, File::Temp, File::Basename,
+#   File::Spec (all standard). Also PerlIO:gzip is needed to read/write
+#   directly from gzipped files
 # - 7z for unpacking with LANG support and packing up
 #
 # Current status based on 3.17.3 dictionary:
@@ -49,7 +49,7 @@ binmode(STDERR, ":utf8");
 use Getopt::Long;
 use File::Temp;
 use File::Basename;
-use Cwd 'abs_path';
+use File::Spec;
 #use Data::Dumper;
 
 my $opt_edict = "edict2";
@@ -491,7 +491,7 @@ sub create_dict {
     chomp($opt_out);
     $opt_out .= ".zip";
   }
-  my $out = abs_path($opt_out);
+  my $out = File::Spec->rel2abs( $opt_out );
   print "creating update dictionary in $opt_out ... ";
   `cd \"$new\" ; 7z a \"$out\" .`;
   print "done\n";
