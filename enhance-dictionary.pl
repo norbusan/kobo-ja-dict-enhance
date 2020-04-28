@@ -329,7 +329,7 @@ sub unpack_original_glohd {
   if (! -r $opt_jadict) {
     die "Cannot read $opt_jadict: $?";
   }
-  $opt_jadict = abs_path($opt_jadict);
+  $opt_jadict = File::Spec->rel2abs($opt_jadict);
   if (! $opt_jadict) {
     die "Cannot determine abs path of $opt_jadict: $?";
   }
